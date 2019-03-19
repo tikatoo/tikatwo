@@ -1,15 +1,20 @@
 import functools
 import re
+import time
+from dataclasses import dataclass
 from typing import \
-    Any, Awaitable, Callable, List, MutableMapping, Match, NamedTuple, Optional
+    Any, Awaitable, Callable, List, MutableMapping, Match, Optional
 import twitchio
 from .matcher import Pattern
 from .modules import MessageHandler, Module, mapping as modules
 
 
-class _PatternsEntry(NamedTuple):
+@dataclass
+class _PatternsEntry:
     matcher: Callable[[twitchio.Message], Any]
     handlers: List[MessageHandler]
+    timeout: float
+    last_invoke: float = 0.0
 
 
 class _RegexMatcher:
@@ -44,6 +49,10 @@ class Channel:
 
         self.modules = {}
 
+        default_timeout = 0.0
+        if 'defaults' in config and 'timeout' in config['defaults']:
+            default_timeout = config['defaults']['timeout']
+
         for pattern in config['patterns']:
             if 'regex' in pattern:
                 matcher = _RegexMatcher(_nick, pattern['regex'])
@@ -62,7 +71,7 @@ class Channel:
                         self.modules[modname] = module
 
                     handlers.append(module.handler(pattern))
-            
+
             response = (
                 ('@{m.author.name}, ' + pattern['reply'])
                 if 'reply' in pattern
@@ -75,16 +84,23 @@ class Channel:
                 handlers.append(functools.partial(
                     self.handle_respond, response
                 ))
-            
+
             if handlers:
                 self._patterns.append(_PatternsEntry(
-                    matcher, handlers
+                    matcher, handlers,
+                    pattern['timeout'] if 'timeout' in pattern
+                    else default_timeout
                 ))
 
     async def handle_message(self, message: twitchio.Message):
         for pattern in self._patterns:
-            match = pattern.matcher(message)
+            # mypy seems to treat this as an error when it's really not
+            match = pattern.matcher(message)    # type: ignore
             if match:
+                now = time.monotonic()
+                if now < (pattern.last_invoke + pattern.timeout):
+                    continue
+                pattern.last_invoke = now
                 for handler in pattern.handlers:
                     await handler(message, match)
 
