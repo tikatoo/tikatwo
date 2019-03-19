@@ -26,7 +26,7 @@ class Counter(Module):
             decrs = options['decr']
             if isinstance(decrs, str):
                 decrs = [decrs]
-        
+
         for counter in itertools.chain(incrs, decrs):
             if counter not in self.counters:
                 self.counters[counter] = 0

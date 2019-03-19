@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import \
     Any, Awaitable, Callable, List, MutableMapping, Match, Optional
 import twitchio
-from .matcher import Pattern
 from .modules import MessageHandler, Module, mapping as modules
 
 
