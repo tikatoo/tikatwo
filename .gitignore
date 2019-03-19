@@ -1,2 +1,4 @@
 __pycache__/
-options.json
+.mypy_cache/
+/options.json
+/tikabot.conf/
