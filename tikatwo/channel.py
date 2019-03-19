@@ -1,3 +1,4 @@
+import functools
 import re
 from typing import \
     Any, Awaitable, Callable, List, MutableMapping, Match, NamedTuple, Optional
@@ -8,7 +9,7 @@ from .modules import MessageHandler, Module, mapping as modules
 
 class _PatternsEntry(NamedTuple):
     matcher: Callable[[twitchio.Message], Any]
-    handler: MessageHandler
+    handlers: List[MessageHandler]
 
 
 class _RegexMatcher:
@@ -32,35 +33,64 @@ class _RegexMatcher:
 
 
 class Channel:
+    _channel: twitchio.Channel
     _patterns: List[_PatternsEntry]
+    modules: MutableMapping[str, Module]
 
     def __init__(self, config: MutableMapping[str, Any],
                  _nick: str, _channel: twitchio.Channel):
+        self._channel = _channel
         self._patterns = []
 
-        module_inst: MutableMapping[str, Module] = {}
+        self.modules = {}
 
         for pattern in config['patterns']:
             if 'regex' in pattern:
                 matcher = _RegexMatcher(_nick, pattern['regex'])
 
-            modname = pattern['module']
-            if modname in module_inst:
-                module = module_inst[modname]
-            else:
-                if 'modules' in pattern and modname in pattern['modules']:
-                    modconf = pattern['modules'][modname]
-                else:
-                    modconf = {}
-                module = modules[modname](_channel, modconf)
-                module_inst[modname] = module
+            handlers: List[MessageHandler] = []
+            if 'modules' in pattern:
+                for modname in pattern['modules']:
+                    if modname in self.modules:
+                        module = self.modules[modname]
+                    else:
+                        if 'modules' in config and modname in config['modules']:
+                            modconf = config['modules'][modname]
+                        else:
+                            modconf = {}
+                        module = modules[modname](_channel, modconf)
+                        self.modules[modname] = module
 
-            self._patterns.append(
-                _PatternsEntry(matcher, module.handler(pattern))
+                    handlers.append(module.handler(pattern))
+            
+            response = (
+                ('@{m.author.name}, ' + pattern['reply'])
+                if 'reply' in pattern
+                else pattern['response']
+                if 'response' in pattern
+                else None
             )
+
+            if response is not None:
+                handlers.append(functools.partial(
+                    self.handle_respond, response
+                ))
+            
+            if handlers:
+                self._patterns.append(_PatternsEntry(
+                    matcher, handlers
+                ))
 
     async def handle_message(self, message: twitchio.Message):
         for pattern in self._patterns:
             match = pattern.matcher(message)
             if match:
-                await pattern.handler(message, match)
+                for handler in pattern.handlers:
+                    await handler(message, match)
+
+    async def handle_respond(self, response: str,
+                             message: twitchio.Message, match):
+        await self._channel.send(response.format(
+            m=message, a=match,
+            **self.modules
+        ))
