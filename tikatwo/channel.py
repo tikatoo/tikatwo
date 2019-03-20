@@ -27,7 +27,7 @@ class _RegexMatcher:
     def __init__(self, nick: str, re_src: str, flags=re.RegexFlag.IGNORECASE):
         self._re = re.compile(self._preprocess(re_src, nick), flags=flags)
 
-    def _preprocess(self, re_src, nick: str):
+    def _preprocess(self, re_src, nick: str) -> str:
         return re_src.format(
             u=self._UserFetch(nick)
         )
